@@ -7,6 +7,7 @@
 
 from sys import argv
 from getopt import getopt
+from modules import parser as Parser
 
 globals = {"input": "", "output": "./out.html", "template": "./templates/template.html", "hosts": "./templates/host.html"}
 
@@ -37,7 +38,27 @@ def processOptions():
 
 # Entry point
 def main():
+    global globals
+    # Process the options
     processOptions()
+    # Create the Parser
+    parser = Parser.Parser()
+    parser.ParseHostFile(globals["hosts"])
+    outputLines = parser.ParseInputFile(globals["input"])
+
+    # Read the template file
+    f = open(globals['template'])
+    template = f.readlines()
+    for line in template:
+        line.replace('<!-- OUTPUT_TAG -->', outputLines)
+    f.close()
+
+    # Write to file
+    f = open(globals['output'])
+    f.writelines(template)
+    f.close()
+
+
     pass
 
 if __name__ == "__main__":

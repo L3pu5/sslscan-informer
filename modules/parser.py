@@ -4,7 +4,7 @@
 
 from enum import Enum
 from datetime import datetime
-from _collections_abc import MutableSequence
+from _collections_abc import MutableSequence, MutableMapping
 
 # Enumerators
 class BLOCK_TYPE(Enum):
@@ -360,7 +360,7 @@ BlockManagers = {
 # Performs parsing and evaluation.
 class Parser():
 
-    managers = {
+    managers: MutableMapping[str, BlockManager] = {
     "PROTOCOLS": None,
     "FALLBACK": None,
     "RENEGOTIATION": None,
@@ -370,14 +370,7 @@ class Parser():
     "EXCHANGE_GROUPS": None,
     "METADATA": None,
 }
-    template: MutableSequence[str] = []
     hostTemplate: MutableSequence[str] = []
-
-    # Read the template files
-    def ReadTemplate(this, templateFile):
-        f = open(templateFile)
-        this.template = f.readlines()
-        f.close()
 
     # Parse the host file
     def ParseHostFile(this, hostFile):
@@ -397,18 +390,73 @@ class Parser():
                 fields = line.split()
                 for key in BlockManagers.keys():
                     if fields[0] == key:
-
+                        this.managers[key] = BlockManager()
+                        activeManager = this.managers[key]
+                        this.hostTemplate.append(key)
+                        #Consume until 'div'
+                        i += 1
+                        line = lines[i]
+                        while line.count('</div>') == 0:
+                            line = lines[i].strip()
+                            activeManager.AddRuleFromString(line)
+                            i += 1
+                        continue
             else:
-                #  
-
-
-
-
+                this.hostTemplate.append(line)
 
     # Parse the input 
-    def ParseInputFile(this, inputFile):
+    def ParseInputFile(this, inputFile) -> MutableSequence[str]:
+        global BlockManagers
+        output: MutableSequence[str] = []
+        activeManager: BlockManager = None
+        activeHeader = ""
+        activeHost = {
+            "IP": "",
+            "PORT": "",
+            "HOSTNAME": "",
+            "index": 0
+        }
+
+
         f = open(inputFile)
         for line in f.readlines():
-            #If this line contains a colon, it is a new field and should apply the appropriate rule manager 
+            line = line.strip()
+            if len(line) == 0:
+                continue
 
+            # Check if this is the headerline for 'connected to' to write a new host
+            if line.count('Connected to') != 0:
+                fields = line.split()
+                activeHost['index'] = 0
+                activeHost['IP'] = fields[2].strip()
+                activeManager = None
+                continue
+
+            if line.count('Testing SSL server ') != 0:
+                fields = line.split()
+                activeHost["HOSTNAME"] = fields[3]
+                activeHost["PORT"] = fields[6]
+                continue
+
+            # Check if this is the header line fo rth eport and hostname
+            #If this line contains a colon, it is a new field and should apply the appropriate rule manager 
+            if line.count(':') == 1:
+                # Check if count is 1 for each manager, then pass control
+                for k, v in BlockManagers:
+                    if line.count(v) != 0:
+                        activeManager = this.managers[k]
+                        activeHeader = k
+                
+                # Special: Assume the divs are in order.
+                # Print from the index up until the replacement index for this host.
+                while this.hostTemplate[activeHost['index']] != activeHeader:
+                    output.append(this.hostTemplate[activeHost['index']])
+                    activeHost['index'] += 1
+
+                continue
+            
+            #Handle this as input, defer to the active manager
+            if activeManager == None:
+                continue
+            output.append(activeManager.TestAndApply(line))
         f.close()
