@@ -1,0 +1,32 @@
+<div class="ssl-output">
+    <h4>IP_ADDRESS:PORT HOST_NAME</h4>
+    <div>
+        PROTOCOLS WHERE:
+            LINE CONTAINS 'SSLv2' AND LINE CONTAINS 'enabled' -> weak
+            'SSLv3' AND 'enabled' -> weak
+            'TLSv1.0' AND 'enabled' -> weak
+    </div>
+    <div>
+        FALLBACKS WHERE:
+    </div>
+    <div>
+        RENEGOTIATION WHERE:
+    </div>
+    <div>
+        COMPRESSION WHERE:
+    </div>
+    <div>
+        HEARTBLEED WHERE:
+    </div>
+    <div>
+        CIPHERS WHERE:
+            CIPHER_STRENGTH IS WEAK -> weak
+    </div>
+    <div>
+        EXCHANGE_GROUPS WHERE:
+    </div>
+    <div>
+        METADATA WHERE:
+
+    </div>
+</div>
