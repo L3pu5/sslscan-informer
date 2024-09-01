@@ -5,6 +5,10 @@
 from enum import Enum
 from datetime import datetime
 from _collections_abc import MutableSequence, MutableMapping
+from modules import poller as Poller
+
+
+ParserPoller: Poller.Poller
 
 # Enumerators
 class BLOCK_TYPE(Enum):
@@ -16,6 +20,7 @@ class ELEMENT_TYPE(Enum):
     LINE            = 0
     LINE_INDEX      = 1
     SELF            = 2
+    MATCH           = 3
 
 class STATEMENT_TYPE(Enum):
     CONTAINS        = 0
@@ -54,10 +59,6 @@ class Element():
     type: ELEMENT_TYPE = ELEMENT_TYPE.LINE
     index: int = 0
 
-    def __init__(this, type: ELEMENT_TYPE, index = 0):
-        this.type = type
-        this.index = index
-    
     def FromString(text:str):
         output = Element()
         text = text.strip()
@@ -65,6 +66,10 @@ class Element():
             output.type = ELEMENT_TYPE.SELF
             return output
         
+        if text.count('MATCH') == 1:
+            output.type = ELEMENT_TYPE.MATCH
+            return output
+
         if text.count('LINE[') == 1:
             output.type = ELEMENT_TYPE.LINE_INDEX
             endIndex = text.find(']')
@@ -96,6 +101,8 @@ class Outcome():
             tempString = f"<span class='{this.cssClass}'>{fields[this.element.index]}</span>"
             fields[this.element.index] = tempString
             return (False, ' '.join(fields))
+        elif this.element.type == ELEMENT_TYPE.MATCH:
+            return (True, f"<span class='{this.cssClass}'>MATCH</span>")
         elif this.element.type == ELEMENT_TYPE.SELF:
             return (True, f"<span class='{this.cssClass}'>SELF</span>")
         print(f"ERROR: Unable to apply an Outcome on '{text}'.")
@@ -106,15 +113,11 @@ class Outcome():
         if text.count("ON") == 1:
             fields = text.split()
             output.cssClass = fields[0]
-            output.element = Element.FromText(fields[2])
+            output.element = Element.FromString(fields[2])
         else:
+            output.cssClass = text
             output.element = Element()
         return output
-
-    def __init__(this, cssClass: str, element=None):
-        if element == None:
-            this.element = Element()
-        this.cssClass = cssClass
 
 ## -- Outcomes
 
@@ -126,8 +129,14 @@ class Result():
     type: RESULT_TYPE
     value: str = ""
 
+    def FromString(text: str):
+        output = Result()
+        output.value = text.strip().strip('\'"')
+        return output
+
     def Get(this):
         return this.value
+
 
 # Component Mapping for string token 
 Components = {"CIPHER_STRENGTH": COMPONENT_TYPE.CIPHER_STRENGTH,
@@ -160,7 +169,11 @@ class Component():
 
         if this.type == COMPONENT_TYPE.CIPHER_STRENGTH:
             # Lookup against the cache from CS
-            pass
+            fields = text.split()
+            # Field 4
+            #suite = fields[4]
+            global ParserPoller
+            return ParserPoller.QueryStrength(fields[4])
 
         # Return 'before-active-date' or 'ok' if ok.
         if this.type == COMPONENT_TYPE.META_BEFORE:
@@ -231,7 +244,7 @@ class Statement():
             return this.component.Get(text) == this.result.Get()
 
         if this.type == STATEMENT_TYPE.CONTAINS:
-            return (this.component.Get(text).count(this.result.Get) != 0)
+            return (this.component.Get(text).count(this.result.Get()) != 0)
 
         print(f"Error: Unable to Test statement.")
         exit (1)
@@ -239,14 +252,14 @@ class Statement():
     def FromString(text: str):
         output = Statement()
         text = text.strip()
-        if text.contains('IS'):
+        if text.count('IS') != 0:
             output.type = STATEMENT_TYPE.IS
             fields = text.split('IS')
             output.component = Component.FromString(fields[0])
             output.result = Result.FromString(fields[1])
             return output
         
-        if text.contains('CONTAINS'):
+        if text.count('CONTAINS') != 0:
             output.type = STATEMENT_TYPE.CONTAINS
             fields = text.split('CONTAINS')
             output.component = Component.FromString(fields[0])
@@ -260,9 +273,6 @@ class Statement():
 class Condition():
     baseStatement:  Statement # for base statements
     optStatement:   Statement # for AND statements
-    def __init__(this, baseStatement, optStatement=None):
-        this.baseStatement = baseStatement
-        this.optStatement = optStatement
 
     def Test(this, text: str):
         flag1 = this.baseStatement.Test(text)
@@ -270,42 +280,46 @@ class Condition():
             return flag1
         
         flag2 = this.optStatement.Test(text)
-
         return flag1 and flag2
 
     def FromString(text: str):
         output = Condition()
         text = text.strip()
-        if (text.count('AND') == 1):
+        if text.count('AND') == 1:
             fields = text.split('AND')
             output.baseStatement = Statement.FromString(fields[0])
             output.optStatement = Statement.FromString(fields[1])
             return output
     
-        output.baseStatement = Statement.FromString(fields[0])
+        output.baseStatement = Statement.FromString(text)
         output.optStatement = None
         return output
 
 ## -- Conditions
 # Defines a Rule for processing text.
 class Rule():
-    rawTex: str
+    rawText: str
     condition: Condition
     outcome: Outcome
 
     # Returns true if the condition matches the text
     def Test(this, text: str):
-        flag1 = False
-        flag2 = True
-        return flag2 & flag1
+        return this.condition.Test(text)
     
     # Returns the HTML render text when applying the 'outcome' to the rule.
     def Apply(this, text:str):
         (result, string) = this.outcome.Apply(text)
         if result == True:
-            string.replace(Condition.baseStatement.component.Get(text))
+            if(string.count('MATCH') == 1):
+                # Get replace the base text with the component in the condition.
+                component = this.condition.baseStatement.result.Get()
+                tempString = text.replace(component, string)
+                tempString = tempString.replace('MATCH', component)
+                string = tempString
+                return string
+            else:
+                string = string.replace("SELF", this.condition.baseStatement.result.Get(text))
         return string
-
 
     def FromString(rawText: str):
         output = Rule()
@@ -313,9 +327,10 @@ class Rule():
         if (output.rawText.count('->') != 1):
             print(f"Error: Illegal Rule format. Rule '{rawText}' does not contain one '->'.")
             exit(1)
-        fields = output.rawTex.split('->')
+        fields = output.rawText.split('->')
         output.condition = Condition.FromString(fields[0])
         output.outcome = Outcome.FromString(fields[1])
+        return output
 
 
 # Manages a 'block' of instructions.
@@ -323,8 +338,7 @@ class BlockManager():
     type: BLOCK_TYPE
     Rules: MutableSequence[Rule] = []
 
-    def __init__(this, type):
-        this.type = type
+    def __init__(this):
         this.Rules = []
 
     def AddRuleFromString(this, text):
@@ -332,6 +346,8 @@ class BlockManager():
 
     # Returns true if any the rules match
     def Test(this, text):
+        if this.Rules == []:
+            return False
         for rule in this.Rules:
             if rule.Test(text) == True:
                 return True
@@ -339,6 +355,9 @@ class BlockManager():
     
     # Returns the string for any of the rules matching, else returns the string as is
     def TestAndApply(this, text):
+        if this.Rules == []:
+            return text
+        
         for rule in this.Rules:
             if rule.Test(text) == True:
                 return rule.Apply(text)
@@ -359,7 +378,6 @@ BlockManagers = {
 }
 # Performs parsing and evaluation.
 class Parser():
-
     managers: MutableMapping[str, BlockManager] = {
     "PROTOCOLS": None,
     "FALLBACK": None,
@@ -369,13 +387,17 @@ class Parser():
     "CIPHERS": None,
     "EXCHANGE_GROUPS": None,
     "METADATA": None,
-}
+    }
     hostTemplate: MutableSequence[str] = []
+
+    def __init__(this, poller):
+        global ParserPoller
+        ParserPoller = poller
 
     # Parse the host file
     def ParseHostFile(this, hostFile):
         global BlockManagers
-
+         
         f = open(hostFile)
         lines = f.readlines()
         f.close()
@@ -384,6 +406,7 @@ class Parser():
         # Parse the lines, ignore non-directives
         for i in range(len(lines)):
             line = lines[i].strip()
+
             #Is this a control block?
             if line.count('WHERE') == 1:
                 #If so, create the appropriate blockManager and consume all inner lines
@@ -395,21 +418,23 @@ class Parser():
                         this.hostTemplate.append(key)
                         #Consume until 'div'
                         i += 1
-                        line = lines[i]
-                        while line.count('</div>') == 0:
-                            line = lines[i].strip()
+                        line = lines[i].strip()
+                        while line != '</div>':
                             activeManager.AddRuleFromString(line)
                             i += 1
-                        continue
+                            line = lines[i].strip()
+                            break
             else:
-                this.hostTemplate.append(line)
+                if line.count('->') == 0:
+                    this.hostTemplate.append(line)
+
 
     # Parse the input 
     def ParseInputFile(this, inputFile) -> MutableSequence[str]:
         global BlockManagers
         output: MutableSequence[str] = []
         activeManager: BlockManager = None
-        activeHeader = ""
+        activeHeader = ""        
         activeHost = {
             "IP": "",
             "PORT": "",
@@ -423,6 +448,10 @@ class Parser():
             line = line.strip()
             if len(line) == 0:
                 continue
+
+            if line.count('Version:') == 1:
+                continue 
+            
 
             # Check if this is the headerline for 'connected to' to write a new host
             if line.count('Connected to') != 0:
@@ -442,21 +471,38 @@ class Parser():
             #If this line contains a colon, it is a new field and should apply the appropriate rule manager 
             if line.count(':') == 1:
                 # Check if count is 1 for each manager, then pass control
-                for k, v in BlockManagers:
+                for (k, v) in BlockManagers.items():
                     if line.count(v) != 0:
                         activeManager = this.managers[k]
                         activeHeader = k
-                
-                # Special: Assume the divs are in order.
-                # Print from the index up until the replacement index for this host.
-                while this.hostTemplate[activeHost['index']] != activeHeader:
-                    output.append(this.hostTemplate[activeHost['index']])
-                    activeHost['index'] += 1
-
+                        # Special: Assume the divs are in order.
+                        # Skip over the header name
+                        activeHost['index'] += 1
+                        # Print from the index up until the replacement index for this host.
+                        while this.hostTemplate[activeHost['index']] != activeHeader:
+                            # Replace any of the template/reserved keywords
+                            tempString = this.hostTemplate[activeHost['index']]
+                            tempString = tempString.replace('PORT', activeHost['PORT'])
+                            tempString = tempString.replace('HOST_NAME', activeHost['HOSTNAME'])
+                            tempString = tempString.replace('IP_ADDRESS', activeHost['IP'])
+                            if tempString.count('<') == 0:
+                                output.append(tempString  + "<br>")
+                            else:
+                                output.append(tempString)
+                            activeHost['index'] += 1
+                output.append("<br>" + line + "<br>")
                 continue
+                #continue
             
             #Handle this as input, defer to the active manager
             if activeManager == None:
                 continue
-            output.append(activeManager.TestAndApply(line))
+ 
+            if line.count('<') == 1:
+                output.append(line)
+            else:
+                output.append(activeManager.TestAndApply(line) + "<br>")
         f.close()
+
+        #print(output)
+        return output
