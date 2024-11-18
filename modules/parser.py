@@ -423,7 +423,6 @@ class Parser():
                             activeManager.AddRuleFromString(line)
                             i += 1
                             line = lines[i].strip()
-                            break
             else:
                 if line.count('->') == 0:
                     this.hostTemplate.append(line)
@@ -455,6 +454,12 @@ class Parser():
 
             # Check if this is the headerline for 'connected to' to write a new host
             if line.count('Connected to') != 0:
+                # If we have any remaining lies for the previous host and template, we should finish sending them.
+                if activeHost['index'] != 0 and activeHost['index'] != len(this.hostTemplate):
+                    while activeHost['index'] != len(this.hostTemplate):
+                        output.append(this.hostTemplate[activeHost['index']])
+                        activeHost['index'] += 1
+
                 fields = line.split()
                 activeHost['index'] = 0
                 activeHost['IP'] = fields[2].strip()
@@ -486,11 +491,11 @@ class Parser():
                             tempString = tempString.replace('HOST_NAME', activeHost['HOSTNAME'])
                             tempString = tempString.replace('IP_ADDRESS', activeHost['IP'])
                             if tempString.count('<') == 0:
-                                output.append(tempString  + "<br>")
+                                output.append(tempString)
                             else:
                                 output.append(tempString)
                             activeHost['index'] += 1
-                output.append("<br>" + line + "<br>")
+                output.append(line)
                 continue
                 #continue
             
@@ -501,7 +506,7 @@ class Parser():
             if line.count('<') == 1:
                 output.append(line)
             else:
-                output.append(activeManager.TestAndApply(line) + "<br>")
+                output.append(activeManager.TestAndApply(line))
         f.close()
 
         #print(output)

@@ -1,10 +1,12 @@
 <div class="ssl-output">
     <h4>IP_ADDRESS:PORT HOST_NAME</h4>
+    <pre data-language="Plain Text">
     <code>
         <div>
             PROTOCOLS WHERE:
-            LINE CONTAINS 'TLSv1.2' AND LINE CONTAINS 'enabled' -> weak
+                LINE CONTAINS 'TLSv1.2' AND LINE CONTAINS 'enabled' -> weak
                 LINE CONTAINS 'TLSv1.1' AND LINE CONTAINS 'enabled' -> weak
+                LINE CONTAINS 'TLSv1.3' AND LINE CONTAINS 'disabled' -> weak
                 LINE CONTAINS 'SSLv3' AND LINE CONTAINS 'enabled' -> weak
                 LINE CONTAINS 'SSLv2' AND LINE CONTAINS 'enabled' -> weak
         </div>
@@ -32,5 +34,6 @@
             METADATA WHERE:
                 LINE CONTAINS '*' -> weak ON MATCH
         </div>
+    </pre>
     </code>
 </div>

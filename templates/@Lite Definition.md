@@ -39,5 +39,5 @@ The statement 'PROTOCOLS WHERE:' will consume the following lines until the clos
 <statement> ::= <component> CONTAINS <resultl> | <component> IS <result>
 <component> ::= LINE | LINE[<index>] | <function>
 <function>  ::= CIPHER_STRENGTH | CIPHER_BITS | META_EXPIRE | META_RENEW | META_BEFORE | META_BITS
-<result>    ::= <string-literal> | 'weak' | 'expired' | 'inactive' | 
+<result>    ::= <string-literal> | 'weak' | 'expired' | 'inactive' | 'before-active-date'
 ``` 
